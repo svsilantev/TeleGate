@@ -12,11 +12,18 @@ if platform.system() == "Windows":
 else:
     DB_HOST = "localhost"
     DB_PORT = "5432"
-    
+
+print(platform.system())
+
 # Настройки соединения с БД
 db_conn = psycopg2.connect(
-    dbname="telethon_db", user="ssilantev", password="u2997988U", host="178.238.114.132", port = "51057"
+    dbname="telethon_db",
+    user="ssilantev",
+    password="u2997988U",
+    host=DB_HOST,
+    port=DB_PORT
 )
+
 db_conn.autocommit = True  # чтобы не вручную делать commit
 
 # Вспомогательная функция для получения свободной сессии
