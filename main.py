@@ -1,8 +1,17 @@
 import psycopg2
+import platform
 from fastapi import FastAPI
 from datetime import datetime, timedelta
 
 app = FastAPI()
+
+# Определяем ОС
+if platform.system() == "Windows":
+    DB_HOST = "localhost"
+    DB_PORT = "5432"
+else:
+    DB_HOST = "178.238.114.132"
+    DB_PORT = "51057"
 
 # Настройки соединения с БД
 db_conn = psycopg2.connect(
