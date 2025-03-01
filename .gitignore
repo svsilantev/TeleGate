@@ -1,0 +1,11 @@
+*.pyc
+*.pyo
+__pycache__/
+
+# Виртуальное окружение
+venv/
+.venv/
+.env
+env/
+.virtualenv/
+telethon_sessions/
