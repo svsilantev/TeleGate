@@ -132,19 +132,27 @@ def api_invalidate_session(session_id: int, api_key: str = Depends(check_api_key
     set_floodwait(session_id, wait_seconds=wait_seconds)
     return {"status": "invalidated", "session_id": session_id}
 
-# Фоновая задача для освобождения зависших сессий (если сессия используется более 3 часов)
+@app.post("/sync")
+def sync_sessions_endpoint(api_key: str = Depends(check_api_key)):
+    """
+    Эндпоинт для ручной синхронизации файлов сессий с записями в БД.
+    Вызывает функцию sync_sessions() и возвращает статистику обновления.
+    """
+    details = sync_sessions()
+    return {"status": "sync complete", "details": details}
+
+# Фоновые задачи
 def background_free_stuck():
     while True:
         freed = free_stuck_sessions(max_duration_hours=3)
         if freed:
             logging.info(f"Освобождено зависших сессий: {freed}")
-        time.sleep(1800)  # запуск проверки каждые 30 минут
+        time.sleep(1800)
 
-# Фоновая задача для синхронизации файлов сессий с записями в БД
 def background_sync_files():
     while True:
         sync_sessions()
-        time.sleep(3600)  # запуск проверки каждые 1 час
+        time.sleep(3600)
 
 # Примечание: запуск фоновых задач осуществляется в обработчике lifespan (см. выше)
 

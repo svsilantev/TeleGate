@@ -165,40 +165,53 @@ def free_stuck_sessions(max_duration_hours=3):
     return freed
 
 def sync_sessions():
-    """Синхронизирует записи о сессиях в БД с реальными файлами .session на диске."""
+    """
+    Синхронизирует записи о сессиях в БД с реальными файлами .session на диске.
+    Возвращает словарь с количеством новых и удалённых сессий.
+    Все новые записи получают одинаковый прокси: user174044:lboavc@62.233.49.71:5862
+    """
     files = set()
     if os.path.isdir(SESSION_FILES_DIR):
         for fname in os.listdir(SESSION_FILES_DIR):
             if fname.endswith(".session"):
-                # Берём имя файла без расширения как идентификатор сессии
-                session_name = fname[:-8]  # удаляем ".session"
+                # Имя сессии берем без расширения ".session"
+                session_name = fname[:-8]
                 files.add(session_name)
     else:
         logging.warning(f"Директория сессий {SESSION_FILES_DIR} не найдена")
-        return
+        return {"new_sessions": 0, "removed_sessions": 0, "total_sessions": 0}
 
     conn = get_connection()
     cur = conn.cursor()
-    # Получаем множество имен сессий, известных базе
+    # Получаем все записи из БД
     cur.execute("SELECT session_name FROM sessions;")
     db_sessions = {row[0] for row in cur.fetchall()}
 
-    # Определяем новые сессии, которые есть на диске, но отсутствуют в базе
+    # Новые сессии: есть на диске, но отсутствуют в БД
     new_sessions = files - db_sessions
-    # Определяем сессии, которые есть в базе, но отсутствуют на диске
+    # Сессии, которых нет на диске, но они есть в БД
     removed_sessions = db_sessions - files
 
-    # Добавляем новые записи в базу
+    new_count = 0
+    removed_count = 0
+
     for name in new_sessions:
         cur.execute(
-            "INSERT INTO sessions (session_name, in_use, in_floodwait) VALUES (%s, FALSE, FALSE);",
-            (name,)
+            """
+            INSERT INTO sessions 
+                (session_name, in_use, in_floodwait, proxy_host, proxy_port, proxy_type, proxy_login, proxy_password)
+            VALUES 
+                (%s, FALSE, FALSE, %s, %s, %s, %s, %s);
+            """,
+            (name, "62.233.49.71", 5862, "socks5", "user174044", "lboavc")
         )
-        logging.info(f"Найдена новая сессия файл {name}.session - добавлено в базу.")
-    # Удаляем записи, для которых файлов нет
+        new_count += 1
+
     for name in removed_sessions:
         cur.execute("DELETE FROM sessions WHERE session_name = %s;", (name,))
-        logging.warning(f"Сессия {name} удалена из базы, т.к. файл .session отсутствует.")
+        removed_count += 1
+
     conn.commit()
     cur.close()
     release_connection(conn)
+    return {"new_sessions": new_count, "removed_sessions": removed_count, "total_sessions": len(files)}
