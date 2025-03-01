@@ -55,6 +55,7 @@ def check_api_key(request: Request):
     Если ключ отсутствует или недопустим – выбрасываем HTTPException.
     """
     api_key = request.headers.get("X-API-Key")
+    print(f"🔍 Получен API-ключ: {api_key}")  # Логируем полученный ключ
     if not api_key:
         raise HTTPException(status_code=401, detail="API key required")
     if api_key not in ALLOWED_API_KEYS:
