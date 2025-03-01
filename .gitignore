@@ -8,4 +8,6 @@ venv/
 .env
 env/
 .virtualenv/
-telethon_sessions/
+sessions/
+test/
+session_manager.log

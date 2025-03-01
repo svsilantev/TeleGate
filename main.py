@@ -1,89 +1,153 @@
-import psycopg2
-import platform
-from fastapi import FastAPI
-from datetime import datetime, timedelta
+# main.py
+import os
+import time
+import threading
+import logging
+import datetime
+import math
+from contextlib import asynccontextmanager
 
-app = FastAPI()
-
-# Определяем ОС
-if platform.system() == "Windows":
-    DB_HOST = "178.238.114.132"
-    DB_PORT = "51057"
-else:
-    DB_HOST = "localhost"
-    DB_PORT = "5432"
-
-print(platform.system())
-
-# Настройки соединения с БД
-db_conn = psycopg2.connect(
-    dbname="telethon_db",
-    user="ssilantev",
-    password="u2997988U",
-    host=DB_HOST,
-    port=DB_PORT
+from fastapi import FastAPI, HTTPException, Depends, Request
+from db import (
+    find_free_session,
+    mark_session_in_use,
+    release_session,
+    set_floodwait,
+    get_status,
+    free_stuck_sessions,
+    sync_sessions,
+    get_connection,
+    release_connection
 )
 
-db_conn.autocommit = True  # чтобы не вручную делать commit
+# Настройка логирования: логи будут записываться в файл session_manager.log
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    filename="session_manager.log",
+    filemode="a"
+)
 
-# Вспомогательная функция для получения свободной сессии
-def fetch_free_session():
-    cur = db_conn.cursor()
-    cur.execute(
-        "SELECT id, session_name, proxy_host, proxy_port, proxy_type, proxy_login, proxy_password "
-        "FROM sessions WHERE in_use = FALSE AND (blocked_until IS NULL OR blocked_until < NOW()) "
-        "LIMIT 1 FOR UPDATE SKIP LOCKED;"
-    )
-    # Используем SELECT ... FOR UPDATE SKIP LOCKED, чтобы блокировать выбранную запись (если транзакционно),
-    # и не столкнуться с конкурентным выбором той же сессии.
-    row = cur.fetchone()
-    if not row:
-        return None
-    session_id, session_name, proxy_host, proxy_port, proxy_type, proxy_login, proxy_pass = row
-    # Помечаем как in_use
-    cur.execute("UPDATE sessions SET in_use = TRUE WHERE id = %s;", (session_id,))
-    cur.close()
-    # Формируем результат для отдачи
-    proxy_info = None
-    if proxy_host:
-        proxy_info = {
-            "type": proxy_type or "socks5",
-            "host": proxy_host,
-            "port": proxy_port,
-            "user": proxy_login,
-            "pass": proxy_pass
-        }
-    return {"session_id": session_id, "session_name": session_name, "proxy": proxy_info}
+# Обработчик жизненного цикла приложения через lifespan
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # При старте запускаем фоновые задачи:
+    threading.Thread(target=background_free_stuck, daemon=True).start()
+    threading.Thread(target=background_sync_files, daemon=True).start()
+    logging.info("Фоновые задачи запущены")
+    yield
+    # При завершении можно добавить код очистки, если потребуется
 
+app = FastAPI(lifespan=lifespan)
+
+# Список разрешённых API-ключей (в продакшене можно хранить в БД или переменных окружения)
+ALLOWED_API_KEYS = {"734f1f98137cc7dd341eee8148d73f1a0e6df6edd8b7dc627b66ea2312dc3be6",
+                    "8093a9bbf4e0d87cfdac4e629c598a5021fc1c4d6d4c62e879150ccf14132dcf",
+                    "f9f9bafd55922e1cacfffa46c6cf46f1414d332ae0e0c3aa8be6b8b797999041",
+                    "418e0534f64f120a2739b08a108d8288b8b4e1e23bab0a7bc618fd2899a5d671",
+                    "960954b245c7bf34ceff5e5073118aa59a225af139be281bbb12b5174d4f67cf"
+                    }  
+
+
+def check_api_key(request: Request):
+    """
+    Проверка API-ключа, передаваемого в заголовке 'X-API-Key'.
+    Если ключ отсутствует или недопустим – выбрасываем HTTPException.
+    """
+    api_key = request.headers.get("X-API-Key")
+    if not api_key:
+        raise HTTPException(status_code=401, detail="API key required")
+    if api_key not in ALLOWED_API_KEYS:
+        raise HTTPException(status_code=403, detail="Invalid API key")
+    return api_key
+
+@app.get("/status")
+def status(api_key: str = Depends(check_api_key)):
+    """
+    Эндпоинт /status возвращает агрегированную статистику:
+      - Общее количество сессий.
+      - Количество свободных сессий.
+      - Количество занятых сессий.
+      - Количество сессий в состоянии Flood Wait.
+      - Время, когда ближайшая сессия выйдет из Flood Wait.
+    """
+    stats = get_status()
+    if stats["next_available"]:
+        stats["next_available"] = stats["next_available"].strftime("%Y-%m-%d %H:%M:%S")
+    return stats
 
 @app.get("/session")
-def get_session():
-    """Запрос свободной сессии"""
-    result = fetch_free_session()
-    if not result:
-        return {"error": "No available session"}  # при отсутствии свободных сессий
-    return result
+def acquire_session(api_key: str = Depends(check_api_key)):
+    """
+    Эндпоинт для выдачи свободной сессии.
+    Если свободная сессия найдена – помечаем её как занятое и возвращаем данные.
+    Если нет – возвращаем подробную информацию о Flood Wait:
+      - Количество сессий в Flood Wait.
+      - Через сколько секунд освободится ближайшая сессия.
+    """
+    session = find_free_session()
+    if session is None:
+        # Собираем информацию о сессиях в Flood Wait
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM sessions WHERE in_floodwait = TRUE AND floodwait_until > NOW();")
+        waiting = cur.fetchone()[0]
+        cur.execute("SELECT MIN(floodwait_until) FROM sessions WHERE in_floodwait = TRUE AND floodwait_until > NOW();")
+        next_time = cur.fetchone()[0]
+        cur.close()
+        release_connection(conn)
+        if next_time:
+            seconds_to_wait = math.ceil((next_time - datetime.datetime.now()).total_seconds())
+        else:
+            seconds_to_wait = None
+        detail = {
+            "error": "no_free_session",
+            "in_floodwait": int(waiting),
+            "next_release_in": seconds_to_wait
+        }
+        raise HTTPException(status_code=503, detail=detail)
+    # Если свободная сессия найдена, отмечаем её как in_use и возвращаем
+    mark_session_in_use(session["id"])
+    return {"session_id": session["id"], "session_name": session["name"]}
 
-@app.post("/session/return")
-def return_session(session_id: int, flood_wait: int = 0):
-    """Возврат сессии в пул"""
-    cur = db_conn.cursor()
-    # Сбрасываем флаг in_use, устанавливаем время блокировки если нужно
-    if flood_wait and flood_wait > 0:
-        until_time = datetime.utcnow() + timedelta(seconds=flood_wait)
-        cur.execute("UPDATE sessions SET in_use = FALSE, blocked_until = %s WHERE id = %s;", (until_time, session_id))
-    else:
-        cur.execute("UPDATE sessions SET in_use = FALSE, blocked_until = NULL WHERE id = %s;", (session_id,))
-    cur.close()
-    return {"status": "returned", "session_id": session_id}
+@app.post("/release")
+def api_release_session(session_id: int, api_key: str = Depends(check_api_key)):
+    """
+    Эндпоинт для возврата сессии в пул.
+    Клиент должен вызвать этот метод после завершения работы с сессией.
+    """
+    release_session(session_id)
+    return {"status": "released", "session_id": session_id}
 
-@app.post("/session/invalidate")
-def invalidate_session(session_id: int):
-    """Инвалидировать (отключить) сессию"""
-    cur = db_conn.cursor()
-    # Помечаем сессию как занятую и ставим большой блок или отдельный флаг, либо удаляем
-    cur.execute("UPDATE sessions SET in_use = TRUE, blocked_until = '2099-01-01' WHERE id = %s;", (session_id,))
-    # В качестве упрощения: помечаем как in_use = TRUE и очень далекой блокировкой.
-    # Можно добавить отдельное поле status (active/invalid).
-    cur.close()
+@app.post("/invalidate")
+def api_invalidate_session(session_id: int, api_key: str = Depends(check_api_key)):
+    """
+    Эндпоинт для инвалидирования сессии.
+    При инвалидировании устанавливаем floodwait_until на далёкую дату (например, 2099-01-01),
+    что означает, что сессия не будет выдана до ручного вмешательства.
+    """
+    far_future = datetime.datetime(2099, 1, 1)
+    wait_seconds = (far_future - datetime.datetime.now()).total_seconds()
+    set_floodwait(session_id, wait_seconds=wait_seconds)
     return {"status": "invalidated", "session_id": session_id}
+
+# Фоновая задача для освобождения зависших сессий (если сессия используется более 3 часов)
+def background_free_stuck():
+    while True:
+        freed = free_stuck_sessions(max_duration_hours=3)
+        if freed:
+            logging.info(f"Освобождено зависших сессий: {freed}")
+        time.sleep(1800)  # запуск проверки каждые 30 минут
+
+# Фоновая задача для синхронизации файлов сессий с записями в БД
+def background_sync_files():
+    while True:
+        sync_sessions()
+        time.sleep(3600)  # запуск проверки каждые 1 час
+
+# Примечание: запуск фоновых задач осуществляется в обработчике lifespan (см. выше)
+
+
+# Основной запуск приложения выполняется через Uvicorn или Gunicorn+UvicornWorker.
+# Пример запуска для разработки:
+# uvicorn main:app --host 0.0.0.0 --port 8000 --reload
