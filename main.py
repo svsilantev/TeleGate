@@ -7,12 +7,12 @@ app = FastAPI()
 
 # Определяем ОС
 if platform.system() == "Windows":
-    DB_HOST = "localhost"
-    DB_PORT = "5432"
-else:
     DB_HOST = "178.238.114.132"
     DB_PORT = "51057"
-
+else:
+    DB_HOST = "localhost"
+    DB_PORT = "5432"
+    
 # Настройки соединения с БД
 db_conn = psycopg2.connect(
     dbname="telethon_db", user="ssilantev", password="u2997988U", host="178.238.114.132", port = "51057"
