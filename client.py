@@ -24,8 +24,8 @@ class TelegramSessionManagerClient:
     def get_session(self):
         """Запрос на получение свободной сессии. Возвращает словарь с данными сессии или выбрасывает исключение/ждет, если нет доступных."""
         url = f"{self.base_url}/session"
-        params = {"api_key": self.api_key}
-        response = requests.get(url, params=params)
+        headers = {"X-API-Key": self.api_key}
+        response = requests.get(url, headers=headers)
         if response.status_code == 503:
             # Нет свободных сессий, обработка Flood Wait
             data = response.json().get("detail", {})
@@ -63,7 +63,7 @@ class TelegramSessionManagerClient:
 
 # Пример использования клиентской библиотеки:
 if __name__ == "__main__":
-    client = TelegramSessionManagerClient(base_url="http://localhost:8000", api_key="734f1f98137cc7dd341eee8148d73f1a0e6df6edd8b7dc627b66ea2312dc3be6")
+    client = TelegramSessionManagerClient(base_url="http://178.238.114.132:52057", api_key="8093a9bbf4e0d87cfdac4e629c598a5021fc1c4d6d4c62e879150ccf14132dcf")
     try:
         session = client.get_session()
         print("Получена сессия:", session)
