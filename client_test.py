@@ -27,7 +27,7 @@ if proxy_info:
     elif proxy_info["type"].lower() in ("http", "https"):
         proxy = (socks.HTTP, proxy_info["host"], proxy_info["port"])
 # Путь к файлу сессии (если нужен полный путь)
-session_path = f"/opt/telethon_sessions/{session_name}.session"
+session_path = f"/home/ssilantev/TeleGate/telethon_sessions/{session_name}.session"
 client = TelegramClient(session_path, API_ID, API_HASH, proxy=proxy)
 
 # 3. Подключение и выполнение операции
