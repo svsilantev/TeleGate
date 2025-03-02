@@ -181,12 +181,13 @@ async def generate_session_string(session_file):
     return session_string
 
 def get_session_string(session_file):
+    # Всегда создаем новый event loop
+    loop = asyncio.new_event_loop()
     try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    return loop.run_until_complete(generate_session_string(session_file))
+        result = loop.run_until_complete(generate_session_string(session_file))
+    finally:
+        loop.close()
+    return result
 
 
 def sync_sessions():
