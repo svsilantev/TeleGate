@@ -23,17 +23,18 @@ def init_db():
         CREATE TABLE IF NOT EXISTS sessions (
             id SERIAL PRIMARY KEY,
             session_name TEXT UNIQUE NOT NULL,
+            session_string TEXT,
             in_use BOOLEAN DEFAULT FALSE,
             last_used TIMESTAMP,
             in_floodwait BOOLEAN DEFAULT FALSE,
             floodwait_until TIMESTAMP,
+            error_message TEXT,
             proxy_host VARCHAR(100),
             proxy_port INTEGER,
             proxy_type VARCHAR(10),
             proxy_login VARCHAR(50),
             proxy_password VARCHAR(50),
-            session_string TEXT,
-            error_message TEXT
+
         );
         """
     )
