@@ -5,6 +5,7 @@ import platform
 from datetime import datetime, timedelta
 import logging
 from telethon import TelegramClient
+from telethon.sync import TelegramClient
 from telethon.sessions import StringSession
 import asyncio
 
@@ -45,6 +46,18 @@ def get_connection():
 def release_connection(conn):
     """Вернуть соединение в пул."""
     conn_pool.putconn(conn)
+
+
+def generate_session_string_sync(session_file: str) -> str:
+    # Если в текущем потоке нет event loop, создаем его
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    with TelegramClient(session_file, API_ID, API_HASH) as client:
+        session_string = StringSession.save(client.session)
+        return session_string
 
 
 # Функция для поиска свободной сессии (которая не занята и не в активном Flood Wait)
@@ -195,9 +208,15 @@ def sync_sessions():
     Синхронизирует записи о сессиях в БД с реальными файлами .session на диске.
     Возвращает словарь с количеством новых и удалённых сессий.
     Все новые записи получают одинаковый прокси: user174044:lboavc@62.233.49.71:5862
-    При обнаружении новой сессии дополнительно пытаемся создать строку сессии.
-    В случае ошибки – записываем сообщение об ошибке и сессия не будет выдаваться.
+    После вставки новой сессии пытаемся создать строку сессии.
     """
+    # Если нет event loop в текущем потоке, создаем его (для фоновой нити)
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    
     files = set()
     if os.path.isdir(SESSION_FILES_DIR):
         for fname in os.listdir(SESSION_FILES_DIR):
@@ -235,19 +254,14 @@ def sync_sessions():
         )
         new_count += 1
 
-        # Пытаемся создать session_string средствами Telethon
         session_file = os.path.join(SESSION_FILES_DIR, f"{name}.session")
         try:
-            # Инициализируем клиента с существующим файлом сессии
-            client = TelegramClient(session_file, API_ID, API_HASH)
-            # Генерируем строку сессии
-            session_string = get_session_string(session_file)
+            session_string = generate_session_string_sync(session_file)
         except Exception as e:
             error_msg = str(e)
             cur.execute("UPDATE sessions SET error_message=%s WHERE session_name=%s;", (error_msg, name))
             logging.error(f"Ошибка при создании session_string для {name}: {error_msg}")
             continue
-        # Обновляем запись с сгенерированной строкой
         cur.execute("UPDATE sessions SET session_string=%s WHERE session_name=%s;", (session_string, name))
 
     for name in removed_sessions:
@@ -258,3 +272,4 @@ def sync_sessions():
     cur.close()
     release_connection(conn)
     return {"new_sessions": new_count, "removed_sessions": removed_count, "total_sessions": len(files)}
+

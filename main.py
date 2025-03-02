@@ -156,12 +156,15 @@ def background_free_stuck():
         time.sleep(1800)
 
 def background_sync_files():
-    # Создаем новый event loop для текущей фоновой нити и устанавливаем его
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
     while True:
-        sync_sessions()  # ваша функция синхронизации, которая вызывает get_session_string
+        sync_sessions()
         time.sleep(3600)
+
 
 # Примечание: запуск фоновых задач осуществляется в обработчике lifespan (см. выше)
 
