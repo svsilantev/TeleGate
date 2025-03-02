@@ -6,6 +6,8 @@ from datetime import datetime, timedelta
 import logging
 from telethon import TelegramClient
 from telethon.sessions import StringSession
+import asyncio
+
 
 SESSION_FILES_DIR = "./sessions"  # путь к директории с файлами сессий
 
@@ -171,6 +173,24 @@ def free_stuck_sessions(max_duration_hours=3):
     release_connection(conn)
     return freed
 
+async def generate_session_string(session_file):
+    client = TelegramClient(session_file, API_ID, API_HASH)
+    await client.connect()
+    session_string = client.session.save()
+    await client.disconnect()
+    return session_string
+
+def get_session_string(session_file):
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        result = loop.run_until_complete(generate_session_string(session_file))
+    finally:
+        loop.close()
+        asyncio.set_event_loop(None)
+    return result
+
+
 def sync_sessions():
     """
     Синхронизирует записи о сессиях в БД с реальными файлами .session на диске.
@@ -222,7 +242,7 @@ def sync_sessions():
             # Инициализируем клиента с существующим файлом сессии
             client = TelegramClient(session_file, API_ID, API_HASH)
             # Генерируем строку сессии
-            session_string = StringSession.save(client.session)
+            session_string = get_session_string(session_file)
         except Exception as e:
             error_msg = str(e)
             cur.execute("UPDATE sessions SET error_message=%s WHERE session_name=%s;", (error_msg, name))
