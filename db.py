@@ -65,9 +65,8 @@ def generate_session_string_sync(session_file: str) -> str:
 def find_free_session():
     conn = get_connection()
     cur = conn.cursor()
-    # Исключаем сессии, у которых error_message не NULL
     cur.execute("""
-        SELECT id, session_name, session_string 
+        SELECT id, session_name, session_string, proxy_host, proxy_port, proxy_type, proxy_login, proxy_password
         FROM sessions 
         WHERE in_use = FALSE 
           AND (in_floodwait = FALSE OR floodwait_until <= NOW())
@@ -78,10 +77,21 @@ def find_free_session():
     cur.close()
     release_connection(conn)
     if result:
-        session_id, session_name, session_string = result
-        return {"id": session_id, "name": session_name, "session_string": session_string}
+        (session_id, session_name, session_string, 
+         proxy_host, proxy_port, proxy_type, proxy_login, proxy_password) = result
+        return {
+            "id": session_id,
+            "name": session_name,
+            "session_string": session_string,
+            "proxy_host": proxy_host,
+            "proxy_port": proxy_port,
+            "proxy_type": proxy_type,
+            "proxy_login": proxy_login,
+            "proxy_password": proxy_password
+        }
     else:
         return None
+
 
 
 # Функция пометить сессию как занятую

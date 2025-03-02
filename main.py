@@ -89,7 +89,7 @@ def acquire_session(api_key: str = Depends(check_api_key)):
     """
     session = find_free_session()
     if session is None:
-        # Собираем информацию о сессиях в Flood Wait
+        # Собираем информацию о сессиях в Flood Wait (код без изменений)
         conn = get_connection()
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) FROM sessions WHERE in_floodwait = TRUE AND floodwait_until > NOW();")
@@ -108,12 +108,17 @@ def acquire_session(api_key: str = Depends(check_api_key)):
             "next_release_in": seconds_to_wait
         }
         raise HTTPException(status_code=503, detail=detail)
-    # Если свободная сессия найдена, отмечаем её как in_use и возвращаем данные с session_string
+    # Если свободная сессия найдена, отмечаем её как in_use и возвращаем данные с прокси
     mark_session_in_use(session["id"])
     return {
         "session_id": session["id"],
         "session_name": session["name"],
-        "session_string": session["session_string"]
+        "session_string": session["session_string"],
+        "proxy_host": session["proxy_host"],
+        "proxy_port": session["proxy_port"],
+        "proxy_type": session["proxy_type"],
+        "proxy_login": session["proxy_login"],
+        "proxy_password": session["proxy_password"]
     }
 
 
