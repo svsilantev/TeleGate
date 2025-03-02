@@ -81,7 +81,7 @@ def status(api_key: str = Depends(check_api_key)):
 def acquire_session(api_key: str = Depends(check_api_key)):
     """
     Эндпоинт для выдачи свободной сессии.
-    Если свободная сессия найдена – помечаем её как занятое и возвращаем данные.
+    Если свободная сессия найдена – помечаем её как занятую и возвращаем данные.
     Если нет – возвращаем подробную информацию о Flood Wait:
       - Количество сессий в Flood Wait.
       - Через сколько секунд освободится ближайшая сессия.
@@ -107,9 +107,14 @@ def acquire_session(api_key: str = Depends(check_api_key)):
             "next_release_in": seconds_to_wait
         }
         raise HTTPException(status_code=503, detail=detail)
-    # Если свободная сессия найдена, отмечаем её как in_use и возвращаем
+    # Если свободная сессия найдена, отмечаем её как in_use и возвращаем данные с session_string
     mark_session_in_use(session["id"])
-    return {"session_id": session["id"], "session_name": session["name"]}
+    return {
+        "session_id": session["id"],
+        "session_name": session["name"],
+        "session_string": session["session_string"]
+    }
+
 
 @app.post("/release")
 def api_release_session(session_id: int, api_key: str = Depends(check_api_key)):

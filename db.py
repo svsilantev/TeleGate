@@ -4,8 +4,13 @@ from psycopg2 import pool
 import platform
 from datetime import datetime, timedelta
 import logging
+from telethon import TelegramClient
+from telethon.sessions import StringSession
 
 SESSION_FILES_DIR = "./sessions"  # путь к директории с файлами сессий
+
+API_ID = 28903747
+API_HASH = "f775a7c89795085b867066093060fc59"
 
 # Определяем ОС
 if platform.system() == "Windows":
@@ -41,23 +46,25 @@ def release_connection(conn):
 
 
 # Функция для поиска свободной сессии (которая не занята и не в активном Flood Wait)
+
 def find_free_session():
     conn = get_connection()
     cur = conn.cursor()
-    # Проверяем есть ли сессия, не занятая и не находящаяся в Flood Wait (или срок Flood Wait уже прошел)
+    # Исключаем сессии, у которых error_message не NULL
     cur.execute("""
-        SELECT id, session_name 
+        SELECT id, session_name, session_string 
         FROM sessions 
         WHERE in_use = FALSE 
           AND (in_floodwait = FALSE OR floodwait_until <= NOW())
+          AND error_message IS NULL
         LIMIT 1;
     """)
     result = cur.fetchone()
     cur.close()
     release_connection(conn)
     if result:
-        session_id, session_name = result
-        return {"id": session_id, "name": session_name}
+        session_id, session_name, session_string = result
+        return {"id": session_id, "name": session_name, "session_string": session_string}
     else:
         return None
 
@@ -169,6 +176,8 @@ def sync_sessions():
     Синхронизирует записи о сессиях в БД с реальными файлами .session на диске.
     Возвращает словарь с количеством новых и удалённых сессий.
     Все новые записи получают одинаковый прокси: user174044:lboavc@62.233.49.71:5862
+    При обнаружении новой сессии дополнительно пытаемся создать строку сессии.
+    В случае ошибки – записываем сообщение об ошибке и сессия не будет выдаваться.
     """
     files = set()
     if os.path.isdir(SESSION_FILES_DIR):
@@ -206,6 +215,21 @@ def sync_sessions():
             (name, "62.233.49.71", 5862, "socks5", "user174044", "lboavc")
         )
         new_count += 1
+
+        # Пытаемся создать session_string средствами Telethon
+        session_file = os.path.join(SESSION_FILES_DIR, f"{name}.session")
+        try:
+            # Инициализируем клиента с существующим файлом сессии
+            client = TelegramClient(session_file, API_ID, API_HASH)
+            # Генерируем строку сессии
+            session_string = StringSession.save(client.session)
+        except Exception as e:
+            error_msg = str(e)
+            cur.execute("UPDATE sessions SET error_message=%s WHERE session_name=%s;", (error_msg, name))
+            logging.error(f"Ошибка при создании session_string для {name}: {error_msg}")
+            continue
+        # Обновляем запись с сгенерированной строкой
+        cur.execute("UPDATE sessions SET session_string=%s WHERE session_name=%s;", (session_string, name))
 
     for name in removed_sessions:
         cur.execute("DELETE FROM sessions WHERE session_name = %s;", (name,))

@@ -1,3 +1,5 @@
+# init_db.py
+
 import psycopg2
 from psycopg2 import sql
 
@@ -29,7 +31,9 @@ def init_db():
             proxy_port INTEGER,
             proxy_type VARCHAR(10),
             proxy_login VARCHAR(50),
-            proxy_password VARCHAR(50)
+            proxy_password VARCHAR(50),
+            session_string TEXT,
+            error_message TEXT
         );
         """
     )
