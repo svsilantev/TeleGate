@@ -33,8 +33,7 @@ def init_db():
             proxy_port INTEGER,
             proxy_type VARCHAR(10),
             proxy_login VARCHAR(50),
-            proxy_password VARCHAR(50),
-
+            proxy_password VARCHAR(50)
         );
         """
     )
