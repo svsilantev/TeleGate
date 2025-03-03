@@ -171,6 +171,43 @@ def background_sync_files():
         time.sleep(3600)
 
 
+@app.post("/floodwait")
+def handle_floodwait(session_id: int, wait_seconds: int, api_key: str = Depends(check_api_key)):
+    """
+    Обрабатывает ошибку FloodWaitError для сессии.
+    Принимает:
+      - session_id: идентификатор сессии, для которой произошла ошибка.
+      - wait_seconds: время ожидания (например, 4593 секунды), полученное из ошибки.
+    
+    Вызывает функцию set_floodwait(), которая устанавливает флаг in_floodwait и рассчитывает время разблокировки.
+    Возвращает обновлённую информацию о сессии.
+    """
+    # Обновляем состояние сессии
+    set_floodwait(session_id, wait_seconds)
+    
+    # Получаем обновлённую информацию о сессии
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id, session_name, floodwait_until FROM sessions WHERE id = %s;", (session_id,))
+    result = cur.fetchone()
+    cur.close()
+    release_connection(conn)
+    
+    if result:
+        session_id, session_name, floodwait_until = result
+        floodwait_until_str = floodwait_until.strftime("%Y-%m-%d %H:%M:%S") if floodwait_until else None
+        return {
+            "status": "floodwait_set",
+            "session_id": session_id,
+            "session_name": session_name,
+            "floodwait_until": floodwait_until_str,
+            "in_floodwait": True
+        }
+    else:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+
+
 # Примечание: запуск фоновых задач осуществляется в обработчике lifespan (см. выше)
 
 
