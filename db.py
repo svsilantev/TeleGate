@@ -49,15 +49,20 @@ def release_connection(conn):
 
 
 def generate_session_string_sync(session_file: str) -> str:
-    # Если в текущем потоке нет event loop, создаем его
+    # Если в текущем потоке нет event loop, создаём его
     try:
         asyncio.get_running_loop()
     except RuntimeError:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
     with TelegramClient(session_file, API_ID, API_HASH) as client:
+        client.connect()  # явное подключение
+        # Проверяем, авторизована ли сессия
+        if not client.is_user_authorized():
+            raise Exception("Сессия не авторизована")
         session_string = StringSession.save(client.session)
         return session_string
+
 
 
 # Функция для поиска свободной сессии (которая не занята и не в активном Flood Wait)
@@ -220,7 +225,6 @@ def sync_sessions():
     Все новые записи получают одинаковый прокси: user174044:lboavc@62.233.49.71:5862
     После вставки новой сессии пытаемся создать строку сессии.
     """
-    # Если нет event loop в текущем потоке, создаем его (для фоновой нити)
     try:
         asyncio.get_running_loop()
     except RuntimeError:
@@ -253,15 +257,18 @@ def sync_sessions():
     removed_count = 0
 
     for name in new_sessions:
+        # Вставляем новую запись и сразу возвращаем её id
         cur.execute(
             """
             INSERT INTO sessions 
                 (session_name, in_use, in_floodwait, proxy_host, proxy_port, proxy_type, proxy_login, proxy_password)
             VALUES 
-                (%s, FALSE, FALSE, %s, %s, %s, %s, %s);
+                (%s, FALSE, FALSE, %s, %s, %s, %s, %s)
+            RETURNING id;
             """,
             (name, "62.233.49.71", 5862, "socks5", "user174044", "lboavc")
         )
+        session_id = cur.fetchone()[0]
         new_count += 1
 
         session_file = os.path.join(SESSION_FILES_DIR, f"{name}.session")
@@ -269,10 +276,16 @@ def sync_sessions():
             session_string = generate_session_string_sync(session_file)
         except Exception as e:
             error_msg = str(e)
-            cur.execute("UPDATE sessions SET error_message=%s WHERE session_name=%s;", (error_msg, name))
+            # Помечаем сессию как недействительную: устанавливаем in_floodwait=TRUE,
+            # floodwait_until до 2099 года и записываем сообщение об ошибке
+            far_future = datetime.datetime(2099, 1, 1)
+            cur.execute(
+                "UPDATE sessions SET error_message=%s, in_floodwait=TRUE, floodwait_until=%s WHERE id=%s;",
+                (error_msg, far_future, session_id)
+            )
             logging.error(f"Ошибка при создании session_string для {name}: {error_msg}")
             continue
-        cur.execute("UPDATE sessions SET session_string=%s WHERE session_name=%s;", (session_string, name))
+        cur.execute("UPDATE sessions SET session_string=%s WHERE id=%s;", (session_string, session_id))
 
     for name in removed_sessions:
         cur.execute("DELETE FROM sessions WHERE session_name = %s;", (name,))
@@ -282,4 +295,3 @@ def sync_sessions():
     cur.close()
     release_connection(conn)
     return {"new_sessions": new_count, "removed_sessions": removed_count, "total_sessions": len(files)}
-

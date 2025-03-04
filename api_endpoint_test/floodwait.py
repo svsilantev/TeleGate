@@ -17,7 +17,7 @@ def test_floodwait():
     headers = {"X-API-Key": API_KEY}
     # Укажите актуальный session_id для теста, здесь используется примерное значение 1
     params = {
-        "session_id": 1,
+        "session_id": 15,
         "wait_seconds": 4593
     }
     response = requests.post(url, headers=headers, params=params)
