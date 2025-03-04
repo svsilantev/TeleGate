@@ -78,10 +78,10 @@ def generate_session_string_sync(session_file: str, API_ID, API_HASH) -> str:
     client = TelegramClient(session_file, API_ID, API_HASH)
     logger.info("Создан клиент для сессии: %s", session_file)
     
-    # # Подключаемся к Telegram
-    # logger.info("Подключаемся к Telegram для сессии (sync): %s", session_file)
-    # client.connect()
-    # logger.info("Подключение успешно выполнено для сессии (sync): %s", session_file)
+    # Подключаемся к Telegram
+    logger.info("Подключаемся к Telegram для сессии (sync): %s", session_file)
+    client.connect()
+    logger.info("Подключение успешно выполнено для сессии (sync): %s", session_file)
     
     # Проверка авторизации с таймаутом
     logger.info("Начинаем проверку авторизации для %s", session_file)
@@ -96,10 +96,10 @@ def generate_session_string_sync(session_file: str, API_ID, API_HASH) -> str:
     session_string = StringSession.save(client.session)
     logger.info("Строка сессии успешно сгенерирована для %s (sync)", session_file)
     
-    # # Отключаемся от Telegram
-    # logger.info("Отключаемся от Telegram для сессии: %s", session_file)
-    # client.disconnect()
-    # logger.info("Отключение успешно выполнено для %s", session_file)
+    # Отключаемся от Telegram
+    logger.info("Отключаемся от Telegram для сессии: %s", session_file)
+    client.disconnect()
+    logger.info("Отключение успешно выполнено для %s", session_file)
     
     return session_string
 
