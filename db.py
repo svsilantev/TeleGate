@@ -47,29 +47,6 @@ def release_connection(conn):
     """Вернуть соединение в пул."""
     conn_pool.putconn(conn)
 
-
-# def generate_session_string_sync(session_file: str) -> str:
-#     import logging
-#     logger = logging.getLogger("session_sync")
-#     logger.info("Начало обработки сессии (sync): %s", session_file)
-#     with TelegramClient(session_file, API_ID, API_HASH) as client:
-#         # logger.info("Подключаемся к Telegram для сессии (sync): %s", session_file)
-#         # # client.connect()
-#         # logger.info("Подключение успешно выполнено для сессии (sync): %s", session_file)
-#         try:
-#             authorized = client.is_user_authorized()
-#             logger.info("Результат проверки авторизации для %s: %s", session_file, authorized)
-#         except Exception as e:
-#             logger.exception("Ошибка при проверке авторизации для %s: %s", session_file, e)
-#             raise
-#         if not authorized:
-#             logger.error("Сессия %s не авторизована", session_file)
-#             raise Exception("Сессия не авторизована")
-#         session_string = StringSession.save(client.session)
-#         logger.info("Строка сессии успешно сгенерирована для %s (sync)", session_file)
-#         return session_string
-
-
 def generate_session_string_sync(session_file: str, API_ID, API_HASH) -> str:
     logger = logging.getLogger("session_sync")
     logger.info("Начало обработки сессии (sync): %s", session_file)
