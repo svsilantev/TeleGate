@@ -83,13 +83,24 @@ def acquire_session(api_key: str = Depends(check_api_key)):
     """
     Эндпоинт для выдачи свободной сессии.
     Если свободная сессия найдена – помечаем её как занятую и возвращаем данные.
-    Если нет – возвращаем подробную информацию о Flood Wait:
-      - Количество сессий в Flood Wait.
-      - Через сколько секунд освободится ближайшая сессия.
+    Если нет – возвращаем подробную информацию о Flood Wait.
     """
+
+    # Сбрасываем истёкшие Flood Wait перед выборкой
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE sessions 
+        SET in_floodwait = FALSE, floodwait_until = NULL
+        WHERE in_floodwait = TRUE AND floodwait_until <= NOW();
+    """)
+    conn.commit()
+    cur.close()
+    release_connection(conn)
+
+    # Теперь пробуем найти свободную сессию
     session = find_free_session()
     if session is None:
-        # Собираем информацию о сессиях в Flood Wait (код без изменений)
         conn = get_connection()
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) FROM sessions WHERE in_floodwait = TRUE AND floodwait_until > NOW();")
@@ -108,6 +119,7 @@ def acquire_session(api_key: str = Depends(check_api_key)):
             "next_release_in": seconds_to_wait
         }
         raise HTTPException(status_code=503, detail=detail)
+
     # Если свободная сессия найдена, отмечаем её как in_use и возвращаем данные с прокси
     mark_session_in_use(session["id"])
     return {
@@ -131,6 +143,7 @@ def api_release_session(session_id: int, api_key: str = Depends(check_api_key)):
     release_session(session_id)
     return {"status": "released", "session_id": session_id}
 
+
 @app.post("/invalidate")
 def api_invalidate_session(session_id: int, api_key: str = Depends(check_api_key)):
     """
@@ -142,6 +155,7 @@ def api_invalidate_session(session_id: int, api_key: str = Depends(check_api_key
     wait_seconds = (far_future - datetime.datetime.now()).total_seconds()
     set_floodwait(session_id, wait_seconds=wait_seconds)
     return {"status": "invalidated", "session_id": session_id}
+
 
 @app.post("/sync")
 def sync_sessions_endpoint(api_key: str = Depends(check_api_key)):
