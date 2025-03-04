@@ -49,19 +49,18 @@ def release_connection(conn):
 
 
 def generate_session_string_sync(session_file: str) -> str:
-    # Если в текущем потоке нет event loop, создаём его
     try:
         asyncio.get_running_loop()
     except RuntimeError:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
     with TelegramClient(session_file, API_ID, API_HASH) as client:
-        client.connect()  # явное подключение
-        # Проверяем, авторизована ли сессия
+        client.connect()
         if not client.is_user_authorized():
             raise Exception("Сессия не авторизована")
         session_string = StringSession.save(client.session)
         return session_string
+
 
 
 
@@ -204,9 +203,14 @@ def free_stuck_sessions(max_duration_hours=3):
 async def generate_session_string(session_file):
     client = TelegramClient(session_file, API_ID, API_HASH)
     await client.connect()
+    # Добавляем проверку авторизации
+    if not await client.is_user_authorized():
+         await client.disconnect()
+         raise Exception("Сессия не авторизована")
     session_string = client.session.save()
     await client.disconnect()
     return session_string
+
 
 def get_session_string(session_file):
     # Всегда создаем новый event loop
