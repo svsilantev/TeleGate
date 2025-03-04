@@ -49,18 +49,24 @@ def release_connection(conn):
 
 
 def generate_session_string_sync(session_file: str) -> str:
+    import logging
+    logger = logging.getLogger("session_sync")
     try:
         asyncio.get_running_loop()
     except RuntimeError:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
+    logger.info("Начало обработки сессии (sync): %s", session_file)
     with TelegramClient(session_file, API_ID, API_HASH) as client:
+        logger.info("Подключаемся к Telegram для сессии (sync): %s", session_file)
         client.connect()
+        logger.info("Подключение успешно выполнено для сессии (sync): %s", session_file)
         if not client.is_user_authorized():
+            logger.error("Сессия %s не авторизована (sync)", session_file)
             raise Exception("Сессия не авторизована")
         session_string = StringSession.save(client.session)
+        logger.info("Строка сессии успешно сгенерирована для %s (sync)", session_file)
         return session_string
-
 
 
 
@@ -200,16 +206,33 @@ def free_stuck_sessions(max_duration_hours=3):
     release_connection(conn)
     return freed
 
+import logging
+
 async def generate_session_string(session_file):
+    logger = logging.getLogger("session_sync")
+    logger.info("Начало обработки сессии: %s", session_file)
     client = TelegramClient(session_file, API_ID, API_HASH)
+    
+    logger.info("Подключаемся к Telegram для сессии %s", session_file)
     await client.connect()
-    # Добавляем проверку авторизации
-    if not await client.is_user_authorized():
-         await client.disconnect()
-         raise Exception("Сессия не авторизована")
+    logger.info("Подключение успешно установлено для сессии %s", session_file)
+    
+    authorized = await client.is_user_authorized()
+    logger.info("Проверка авторизации для %s: %s", session_file, authorized)
+    
+    if not authorized:
+        logger.error("Сессия %s не авторизована", session_file)
+        await client.disconnect()
+        raise Exception("Сессия не авторизована")
+    
     session_string = client.session.save()
+    logger.info("Строка сессии успешно сгенерирована для %s", session_file)
+    
     await client.disconnect()
+    logger.info("Отключение выполнено для сессии %s", session_file)
+    
     return session_string
+
 
 
 def get_session_string(session_file):
