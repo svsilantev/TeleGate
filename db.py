@@ -54,7 +54,7 @@ def generate_session_string_sync(session_file: str) -> str:
     logger.info("Начало обработки сессии (sync): %s", session_file)
     with TelegramClient(session_file, API_ID, API_HASH) as client:
         logger.info("Подключаемся к Telegram для сессии (sync): %s", session_file)
-        client.connect()
+        # client.connect()
         logger.info("Подключение успешно выполнено для сессии (sync): %s", session_file)
         try:
             authorized = client.is_user_authorized()
