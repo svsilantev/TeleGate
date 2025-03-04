@@ -47,7 +47,7 @@ def release_connection(conn):
     """Вернуть соединение в пул."""
     conn_pool.putconn(conn)
 
-def generate_session_string_sync(session_file: str, API_ID, API_HASH) -> str:
+def generate_session_string_sync(session_file: str) -> str:
     logger = logging.getLogger("session_sync")
     logger.info("Начало обработки сессии (sync): %s", session_file)
     
